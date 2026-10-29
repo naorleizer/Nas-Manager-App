@@ -1,11 +1,13 @@
 # NasManager App
 
-Android mobile app for connecting to a **TrueNAS Scale** server via its official API (`/api/v2.0`), and viewing a near-real-time system dashboard straight from your phone.
+Android mobile app for connecting to a **TrueNAS Scale** server via its WebSocket JSON-RPC 2.0 API (`/api/current`), and viewing a near-real-time system dashboard straight from your phone.
+
+Fork of Juju-archy/Nas-Manager-App (v1.2.0 baseline, GPL-3.0) with the network layer migrated from REST /api/v2.0 to the WebSocket JSON-RPC 2.0 API.
 
 ## Tech stack
 
 - **Kotlin** + **Jetpack Compose** (Material 3) — Android native only for now, no iOS version yet.
-- **OkHttp** for network calls to the TrueNAS Scale API (manual REST calls, no Retrofit).
+- **OkHttp** WebSocket for the TrueNAS Scale JSON-RPC 2.0 API (hand-written client, no Retrofit).
 - **Gson** for JSON serialization.
 - **AndroidSVG** to render app icons served as SVG (PNG/JPEG go through Android's `BitmapFactory`).
 - **Coroutines / StateFlow** for async state management (MVVM architecture).
@@ -26,12 +28,11 @@ graph TB
 
     AuthRepo --> CredStore["CredentialsStore<br/>(in-memory)"]
     AuthRepo -->|"if 'stay logged in'"| SessionPrefs["SessionPreferences<br/>(EncryptedSharedPreferences)"]
-    AuthRepo --> OkHttp["Shared OkHttpClient"]
-    DashRepo --> OkHttp
+    AuthRepo --> Rpc["TrueNasRpcClient<br/>(one WebSocket per session)"]
+    DashRepo --> Rpc
+    Rpc -->|"re-auth on reconnect"| CredStore
 
-    OkHttp --> AuthInterceptor["AuthInterceptor<br/>adds Authorization: Basic"]
-    AuthInterceptor --> CredStore
-    OkHttp --> TrueNAS[("TrueNAS Scale server<br/>/api/v2.0/...")]
+    Rpc --> TrueNAS[("TrueNAS Scale server<br/>wss://host:port/api/current")]
 
     FeatureScreens -. app icons only .-> ImageClient["imageOkHttpClient<br/>(unauthenticated)"]
     ImageClient --> CDN[("Public CDN<br/>media.sys.truenas.net")]
@@ -39,22 +40,24 @@ graph TB
     SessionPrefs -. encrypted via .-> Keystore[("Android Keystore")]
 ```
 
-- **Auth is stateless**: every request carries its own `Authorization: Basic` header (added by `AuthInterceptor` from whatever `CredentialsStore` currently holds) — there's no session cookie, so logging in only means validating credentials once against `GET /system/info` and keeping them for later requests.
+- **One authenticated WebSocket per session**: `TrueNasRpcClient` opens `/api/current`, authenticates it once with `auth.login_ex`, and multiplexes every call over it as JSON-RPC 2.0 (`params` always an array). If the socket drops it reconnects lazily (exponential backoff) and re-authenticates with the credentials held by `CredentialsStore`.
 - **One `DashboardViewModel`/`DashboardUiState` feeds every post-login screen** (Dashboard, reporting graphs, pool detail, Alerts, Apps, System) — navigation between them is local Compose state (`var ... by remember` in `DashboardScreen.kt`), not a router.
 - **`imageOkHttpClient` is deliberately separate and unauthenticated**: app icons are served from a public CDN, not the user's TrueNAS, so the NAS credentials must never be sent there.
 
 ## Authentication
 
-TrueNAS Scale doesn't expose a REST login/session route (`auth.login` exists on the middleware but only over WebSocket JSON-RPC). The app therefore authenticates via **HTTP Basic Auth** (TrueNAS username + password, sent on every request) — no session cookie, auth is stateless.
+The app authenticates the WebSocket with **`auth.login_ex`** (`PASSWORD_PLAIN`: TrueNAS username + password), once per connection. If that fails and the password field holds something shaped like an API key (`<number>-<16+ chars>`), it retries once with `API_KEY_PLAIN` — so you can paste an API key in the password field. Accounts that require two-factor authentication, lack API access, have expired credentials, or must authenticate on the other controller get a specific message.
 
-Unencrypted HTTP (no certificate) is allowed to any address (IP or hostname), but only after the user has explicitly checked a box accepting the associated risks. HTTPS remains recommended — see `CONNECTIVITY_TODO.md` for the connection scenarios covered.
+The WebSocket URL is derived from the typed address: `https://` → `wss://`, `http://` → `ws://`, the port is the one you typed (443/80 by default), path `/api/current`.
 
-> ⚠️ **Recommendation**: use a TrueNAS account **dedicated to the app**, with reduced permissions (read-only on the screens used, plus app-update permission if you plan to use it), rather than the main admin account. The password is sent base64-encoded (Basic Auth, not encryption) on every request — in the clear if you use HTTP mode — a dedicated account limits the damage in case of interception.
+Unencrypted HTTP (`ws://`, no certificate) is allowed to any address (IP or hostname), but only after the user has explicitly checked a box accepting the associated risks. HTTPS (`wss://`) remains recommended — see `CONNECTIVITY_TODO.md` for the connection scenarios covered.
+
+> ⚠️ **Recommendation**: use a TrueNAS account **dedicated to the app**, with reduced permissions (read-only on the screens used, plus app-update permission if you plan to use it), rather than the main admin account — or an API key. The password is sent in the clear if you use HTTP mode; a dedicated account limits the damage in case of interception.
 
 ## Features
 
 - [x] Login screen (server address, credentials, "stay logged in" option)
-- [x] Authentication via Basic Auth, validated by a GET `/api/v2.0/system/info`
+- [x] Authentication via `auth.login_ex` (password or API key) on the `/api/current` WebSocket
 - [x] Session persistence (encrypted credentials + local preferences)
 - [x] Post-login dashboard: system info, CPU (total + per core), memory (Services / ZFS Cache / Free breakdown), pools & storage — CPU/memory/pools refreshed every 2s
 - [x] Detailed reporting graphs for CPU, Memory and Pools & Storage (CPU/Memory history, Pools detail per pool then per disk)
@@ -70,7 +73,7 @@ Unencrypted HTTP (no certificate) is allowed to any address (IP or hostname), bu
 
 - Android Studio (latest stable version)
 - JDK 17+ (required by the Android Gradle Plugin 9)
-- A TrueNAS Scale server reachable from the phone/emulator, with the REST API enabled
+- A TrueNAS Scale server reachable from the phone/emulator (TrueNAS 25.10 `/api/current` JSON-RPC API)
 
 ## Getting started
 
@@ -81,10 +84,10 @@ Unencrypted HTTP (no certificate) is allowed to any address (IP or hostname), bu
 Or simply open the project in Android Studio and run the app on an emulator/device (`minSdk 35`).
 
 On the login screen, provide:
-- the server address (e.g. `https://192.168.1.10`)
-- your TrueNAS username and password
+- the server address (e.g. `https://192.168.1.10`, or `https://nas.local:8443` — the port comes from the typed address)
+- your TrueNAS username and password (or an API key in the password field)
 
-> Note: if your TrueNAS uses a self-signed certificate, it must be imported into Android's security settings for the HTTPS connection to succeed.
+> Note: if your TrueNAS uses a self-signed certificate, it must be imported into Android's security settings for the HTTPS (`wss://`) connection to succeed.
 
 ## Building a signed release
 
@@ -114,8 +117,8 @@ backed up outside this repository — see `SECURITY_TODO.md`.
 ```
 app/src/main/java/com/nasmanagerapp/
 ├── data/
-│   ├── auth/       # Auth repository (Basic Auth) + session persistence
-│   ├── network/    # OkHttp client, credentials, HTTP/HTTPS policy
+│   ├── auth/       # Auth repository (auth.login_ex) + session persistence
+│   ├── network/    # JSON-RPC WebSocket client, credentials, HTTP/HTTPS policy
 │   └── dashboard/  # Dashboard repository + models (system.info, pool.query, reporting)
 ├── ui/
 │   ├── login/      # Login screen and ViewModel

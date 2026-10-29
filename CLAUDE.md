@@ -5,16 +5,17 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
 
 ## Architecture
 
-- **Network**: OkHttp + Gson, manual REST calls to `/api/v2.0/...` (no Retrofit). The authenticated
-  `OkHttpClient` (`TrueNasApplication.okHttpClient`) carries an `AuthInterceptor` that adds auth to
-  every request; a second, separate `imageOkHttpClient` (no interceptor) is used only for app icons
-  served by a public CDN, so the NAS credentials are never sent there — see `APPS_TODO.md`. Icons
+- **Network**: OkHttp WebSocket + Gson, JSON-RPC 2.0 calls to `/api/current` (no Retrofit; method
+  map in `WS_MIGRATION.md`). `TrueNasRpcClient` keeps one authenticated socket per session (lazy
+  connect, exponential-backoff reconnect, re-auth from `CredentialsStore`); the shared
+  `OkHttpClient` (`TrueNasApplication.okHttpClient`) has `pingInterval(20s)`; a second, separate
+  `imageOkHttpClient` is used only for app icons served by a public CDN, so the NAS credentials are never sent there — see `APPS_TODO.md`. Icons
   are PNG/JPEG (`BitmapFactory`) or SVG (AndroidSVG, internal XML entities disabled app-wide in
   `TrueNasApplication.onCreate`), with a bounded download and decode size (`AppsScreen.kt`).
-- **Auth**: Basic Auth (`Authorization: Basic base64(user:pass)`), no API key or session cookie —
-  TrueNAS Scale has no `/auth/login` REST route. `CredentialsStore` keeps the credentials in
-  memory; `TrueNasAuthRepository.login()` validates them via a GET `/api/v2.0/system/info` before
-  storing them there. `SessionPreferences` (EncryptedSharedPreferences) persists them if "Stay
+- **Auth**: `auth.login_ex` on the WebSocket (`PASSWORD_PLAIN`, then one `API_KEY_PLAIN` retry if
+  the secret looks like an API key), followed by `core.set_options {legacy_jobs:false}`.
+  `CredentialsStore` keeps username + secret in memory (needed to re-auth on reconnect);
+  `TrueNasAuthRepository.login()` opens the session and stores them only once accepted. `SessionPreferences` (EncryptedSharedPreferences) persists them if "Stay
   logged in" is checked. "Stay logged in" is unavailable for an `http://` address (checkbox
   disabled in `LoginScreen`, guarded again in `LoginViewModel` and on restore in
   `TrueNasApplication.onCreate`, via the shared `TrueNasUrl.isHttp` helper) — see
@@ -56,13 +57,13 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   `core.get_jobs` to completion) and "Update All" (same mechanism run in parallel across every app
   with an update available), plus a per-app status dot + Start/Stop button (`app.start`/`app.stop`, same
   job mechanism; tinted square icon so it isn't mistaken for "Update", Stop confirmed by a dialog). No CPU/Memory/Network/Block I/O per app — these metrics only exist as
-  WebSocket events on the TrueNAS side (`app.stats`/`container.metrics`), not over REST, and this
-  app is REST-only. "Discover Apps" is only a placeholder for now (the `catalog.apps` catalog is
+  WebSocket events on the TrueNAS side (`app.stats`/`container.metrics`), not as plain calls, and
+  this app doesn't subscribe to them. "Discover Apps" is only a placeholder for now (the `catalog.apps` catalog is
   ~800 KB). Full detail in `APPS_TODO.md`.
 - **System** (`SystemScreen.kt`): screen reachable from the drawer, four sections loaded
   together on open + manual refresh (not polled) — General settings (`system.general`), Network
   (`network.configuration` + `interface`), Boot (`boot.get_state` + `boot.environment`, exposed
-  over REST under `/boot/environment/query`) and Services (`service.query`). The first three are
+  as `boot.environment.query`) and Services (`service.query`). The first three are
   display only (no editing timezone, network, activating a boot environment). Services has
   "Running"/"Start automatically" switches per service, applied only by a "Save modifications"
   button pinned to the bottom of the screen (`service.start`/`stop`, synchronous, and

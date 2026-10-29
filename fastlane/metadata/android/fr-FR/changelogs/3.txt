@@ -1,0 +1,3 @@
+Nouveautés :
+• Écran Système : nouvelle section Services (SMB, NFS, SSH, FTP, iSCSI, NVMe-oF, SNMP, UPS) avec interrupteurs Running et Start auto, appliqués via le bouton « Save modifications »
+• Écran de connexion et menu : logo de l'app, licence et lien vers le code source

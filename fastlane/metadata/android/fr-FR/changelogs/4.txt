@@ -1,0 +1,2 @@
+Nouveautés :
+• Écran Apps : démarrer et arrêter les apps directement depuis la liste (bouton ■/▶, l’arrêt demande une confirmation) ; l’état est maintenant affiché par un point vert/rouge

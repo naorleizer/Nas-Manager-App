@@ -1,0 +1,6 @@
+First release:
+• Real-time dashboard: system, CPU, memory, pools
+• Reporting graphs for CPU, memory, pools and disks (5 min to 1 month)
+• Alerts with dismiss
+• Installed apps: update one or all
+• System screen: general, network, boot (read-only)

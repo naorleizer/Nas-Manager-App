@@ -1,0 +1,42 @@
+NasManager est un client compagnon non officiel pour les serveurs TrueNAS® SCALE. Il communique directement avec l'API REST de votre serveur (/api/v2.0) : aucun compte à créer, aucun serveur intermédiaire, pas de pistage, pas de publicité.
+
+<b>Tableau de bord</b>
+<ul>
+<li>Informations système, CPU (total et par cœur), mémoire (Services / Cache ZFS / Libre, même répartition que le tableau de bord web de TrueNAS), pools et stockage</li>
+<li>CPU, mémoire et pools rafraîchis toutes les 2 secondes</li>
+</ul>
+
+<b>Graphes de reporting</b>
+<ul>
+<li>CPU : utilisation (moyenne et par cœur), température, charge moyenne</li>
+<li>Mémoire : disponible, utilisée, cache ZFS (ARC)</li>
+<li>Période de 5 minutes à 1 mois, rafraîchissement automatique toutes les 5 secondes en option</li>
+<li>Pools : répartition de l'espace, topologie, capacité utile, état, fragmentation, dernier scrub</li>
+<li>Détail par disque : graphes d'E/S et de température, avec max / moyenne / min</li>
+</ul>
+
+<b>Alertes</b> : liste des alertes actives avec un badge dans le menu, et un bouton « Dismiss » par alerte (appliqué sur le serveur, comme dans l'interface web).
+
+<b>Apps</b> : applications installées avec leur état, mise à jour d'une app ou de toutes à la fois.
+
+<b>Système</b> : paramètres généraux, configuration réseau et interfaces, environnements de démarrage (lecture seule).
+
+<b>Sécurité et vie privée — à lire</b>
+<ul>
+<li><b>Authentification</b> : TrueNAS SCALE n'expose pas de route de connexion REST, l'app utilise donc l'authentification HTTP Basic : votre identifiant et votre mot de passe sont envoyés à chaque requête vers votre serveur. Utilisez un compte TrueNAS dédié à l'app, aux droits réduits, plutôt que votre compte administrateur principal.</li>
+<li><b>HTTP non chiffré</b> : HTTPS est recommandé. Le HTTP en clair (adresse IP ou nom d'hôte) est possible, mais uniquement après avoir coché explicitement une case acceptant le risque : vos identifiants circulent alors en clair sur le réseau.</li>
+<li><b>Stockage des identifiants</b> : par défaut, les identifiants ne sont conservés qu'en mémoire. Si vous cochez « Stay logged in » (Rester connecté), ils sont enregistrés sur l'appareil, chiffrés avec une clé conservée dans l'Android Keystore (EncryptedSharedPreferences). Cette option est indisponible pour une adresse HTTP : un mot de passe enregistré n'est donc jamais renvoyé automatiquement en clair.</li>
+<li><b>Connexions réseau</b> : l'app ne se connecte qu'à l'adresse de serveur que vous saisissez, ainsi que, sur l'écran Apps, au CDN public d'icônes TrueNAS (media.sys.truenas.net) pour afficher les icônes des applications. Vos identifiants ne sont jamais envoyés à ce CDN.</li>
+</ul>
+
+<b>Prérequis et limites</b>
+<ul>
+<li>Un serveur TrueNAS SCALE joignable depuis votre téléphone. Avec un certificat auto-signé (le défaut de TrueNAS), installez-le dans les paramètres de sécurité d'Android pour que HTTPS fonctionne.</li>
+<li>Pas de consommation CPU / mémoire / réseau par app : TrueNAS n'expose ces métriques qu'en WebSocket, pas en REST.</li>
+<li>« Discover Apps » (parcourir le catalogue et installer) n'est pas encore disponible.</li>
+<li>Interface en anglais.</li>
+</ul>
+
+Logiciel libre, sous licence GPLv3.
+
+TrueNAS® est une marque déposée d'iXsystems, Inc. Cette application est un projet indépendant, sans lien avec iXsystems ni approuvé par elle.

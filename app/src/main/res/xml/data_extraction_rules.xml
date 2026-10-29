@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Sample data extraction rules file; uncomment and customize as necessary.
+   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   for details.
+-->
+<data-extraction-rules>
+    <!--
+        truenas_session holds the TrueNAS API key via EncryptedSharedPreferences, whose master
+        key lives in the Android Keystore and never leaves the device. A backed-up copy would be
+        undecryptable after a restore (new device, or even a factory reset) and could crash the
+        app on next read, so it's excluded from both backup paths rather than restored broken.
+    -->
+    <cloud-backup>
+        <exclude domain="sharedpref" path="truenas_session.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="truenas_session.xml" />
+    </device-transfer>
+</data-extraction-rules>

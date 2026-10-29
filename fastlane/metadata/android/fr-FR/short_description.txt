@@ -1,0 +1,1 @@
+Client non officiel TrueNAS SCALE : tableau de bord, graphes, alertes, apps

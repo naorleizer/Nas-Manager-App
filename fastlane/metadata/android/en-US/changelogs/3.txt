@@ -1,0 +1,3 @@
+New:
+• System screen: new Services section (SMB, NFS, SSH, FTP, iSCSI, NVMe-oF, SNMP, UPS) with Running and Start auto switches, applied with a "Save modifications" button
+• Login screen and menu: app logo, license and link to the source code

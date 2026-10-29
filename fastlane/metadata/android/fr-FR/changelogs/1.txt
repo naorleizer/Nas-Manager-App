@@ -1,0 +1,6 @@
+Première version :
+• Tableau de bord temps réel : système, CPU, mémoire, pools
+• Graphes de reporting CPU, mémoire, pools et disques (5 min à 1 mois)
+• Alertes, avec possibilité de les ignorer
+• Apps installées : mise à jour d'une ou de toutes
+• Écran Système : général, réseau, démarrage (lecture seule)

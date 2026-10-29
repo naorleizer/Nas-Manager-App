@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        TrueNAS Scale ships with a self-signed certificate by default. Trusting
+        "user" anchors lets this app accept it, but only after the user has
+        explicitly imported it via Android's certificate settings — this does
+        NOT disable certificate validation.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    <!--
+        cleartextTrafficPermitted="true" above allows plain HTTP so users can reach a TrueNAS
+        on their LAN, over a home VPN, or via any custom URL/IP they choose — HTTP is not
+        restricted to any particular address here or in app code. The only gate is user
+        consent: TrueNasAuthRepository.login() refuses an http:// address unless the caller
+        passes acceptHttpRisks = true, which LoginScreen only sends once the user has ticked
+        the "I accept the risks of unencrypted HTTP" checkbox.
+    -->
+</network-security-config>

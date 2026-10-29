@@ -1,0 +1,3 @@
+Bug fixes:
+• App icons served as SVG (Immich, Jellyfin, Nextcloud...) are now displayed instead of the generic icon
+• App icon downloads are now size-limited

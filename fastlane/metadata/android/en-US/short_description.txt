@@ -1,0 +1,1 @@
+Unofficial companion client for TrueNAS SCALE: dashboard, graphs, alerts, apps

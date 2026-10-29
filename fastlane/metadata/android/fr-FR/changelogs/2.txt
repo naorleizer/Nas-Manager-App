@@ -1,0 +1,3 @@
+Corrections :
+• Les icônes d'apps au format SVG (Immich, Jellyfin, Nextcloud...) s'affichent au lieu de l'icône générique
+• Le téléchargement des icônes d'apps est désormais limité en taille

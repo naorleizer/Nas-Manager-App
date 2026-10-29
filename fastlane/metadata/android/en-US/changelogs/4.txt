@@ -1,0 +1,2 @@
+New:
+• Apps screen: start and stop apps directly from the list (■/▶ button, stopping asks for confirmation); the status is now shown as a green/red dot

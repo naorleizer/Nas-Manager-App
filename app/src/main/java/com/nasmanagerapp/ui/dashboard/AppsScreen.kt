@@ -74,11 +74,13 @@ import okio.BufferedSource
  * middleware job polled to completion — see `APPS_TODO.md`), plus a per-app status dot and Start/Stop button
  * ([DashboardViewModel.setAppRunning], same job mechanism). No CPU/Block I/O/Network columns:
  * those only exist as WebSocket subscription events server-side (curl-verified, see
- * `APPS_TODO.md`), and this app is REST-only.
+ * `APPS_TODO.md`); since the WebSocket JSON-RPC migration (see `WS_MIGRATION.md`) subscribing to
+ * them is at least on the table, but nothing consumes them yet.
  *
  * "Discover Apps" only opens a placeholder for now ([AppsDiscoverScreen]) — the real catalog
- * (`POST /api/v2.0/catalog/apps`) is a ~800KB payload across 5 trains, browsing/installing from it
- * is a separate, much bigger feature than what was asked here.
+ * (`catalog.apps` over JSON-RPC; the REST-era equivalent was the `catalog/apps` POST endpoint) is a ~800KB
+ * payload across 5 trains, browsing/installing from it is a separate, much bigger feature than
+ * what was asked here.
  */
 @Composable
 fun AppsRoute(

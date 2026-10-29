@@ -24,6 +24,10 @@ object TrueNasUrl {
      */
     fun deriveWebSocketUri(input: String): String? {
         val url = normalize(input).toHttpUrlOrNull() ?: return null
+        // okhttp's lenient parsing can turn scheme-like garbage into a literal host named
+        // "https"/"http" (e.g. "https://" survives normalize's trimEnd as "https:") — that is
+        // never a usable address; a real NAS host can't collide with it either.
+        if (url.host.isBlank() || url.host == "https" || url.host == "http") return null
         val scheme = if (url.scheme == "https") "wss" else "ws"
         val host = if (':' in url.host) "[${url.host}]" else url.host
         return "$scheme://$host:${url.port}/api/current"

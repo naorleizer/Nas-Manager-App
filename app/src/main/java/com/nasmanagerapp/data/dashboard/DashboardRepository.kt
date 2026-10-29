@@ -3,16 +3,12 @@ package com.nasmanagerapp.data.dashboard
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
+import com.nasmanagerapp.data.network.TrueNasRpcClient
 import java.io.IOException
 import java.time.OffsetDateTime
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 
 class DashboardApiException(message: String) : Exception(message)
 
@@ -25,20 +21,22 @@ class DashboardApiException(message: String) : Exception(message)
  * seconds, un-aggregated) and keeps the most recent sample, instead of the default hour-long,
  * ~3600-point series that a naive call would return every poll.
  *
- * Doesn't re-check the HTTP-risk consent itself: it relies on `baseUrlProvider` only ever
- * returning a URL that [TrueNasAuthRepository][com.nasmanagerapp.data.auth.TrueNasAuthRepository]
- * already used for a successful login (which required that consent for cleartext HTTP) and
- * persisted as-is.
+ * Doesn't re-check the HTTP-risk consent itself: [rpc] only ever connects to the address that
+ * [TrueNasAuthRepository][com.nasmanagerapp.data.auth.TrueNasAuthRepository] already used for a
+ * successful login (which required that consent for cleartext HTTP) and persisted as-is.
+ *
+ * Every call is a JSON-RPC 2.0 call over the `/api/current` WebSocket (see `WS_MIGRATION.md` for
+ * the REST to RPC method map). Query filters are positional arg 0, three levels deep:
+ * `[[["id", "=", 1]]]`.
  */
 class DashboardRepository(
-    private val okHttpClient: OkHttpClient,
-    private val baseUrlProvider: () -> String,
+    private val rpc: TrueNasRpcClient,
 ) {
     private val gson = Gson()
 
     suspend fun getSystemInfo(): Result<SystemInfo> = withContext(Dispatchers.IO) {
         runCatching {
-            val dto = get("/api/v2.0/system/info", SystemInfoDto::class.java)
+            val dto = call("system.info", SystemInfoDto::class.java)
             SystemInfo(
                 hostname = dto.hostname,
                 version = dto.version,
@@ -57,7 +55,7 @@ class DashboardRepository(
 
     suspend fun getPools(): Result<List<PoolSummary>> = withContext(Dispatchers.IO) {
         runCatching {
-            val dtos = get("/api/v2.0/pool", Array<PoolDto>::class.java)
+            val dtos = call("pool.query", Array<PoolDto>::class.java)
             dtos.map {
                 PoolSummary(
                     id = it.id,
@@ -85,10 +83,11 @@ class DashboardRepository(
                     aggregate = false,
                 ),
             )
-            val series = post(
-                "/api/v2.0/reporting/netdata_get_data",
-                body,
+            val series = call(
+                "reporting.netdata_get_data",
                 Array<NetdataSeriesDto>::class.java,
+                body.graphs,
+                body.query,
             )
             extractLiveMetrics(series.toList())
                 ?: throw DashboardApiException("No monitoring data available yet.")
@@ -114,10 +113,11 @@ class DashboardRepository(
                     aggregate = true,
                 ),
             )
-            val series = post(
-                "/api/v2.0/reporting/netdata_get_data",
-                body,
+            val series = call(
+                "reporting.netdata_get_data",
                 Array<NetdataSeriesDto>::class.java,
+                body.graphs,
+                body.query,
             )
             extractMetricsHistory(series.toList())
                 ?: throw DashboardApiException("No monitoring history available yet.")
@@ -144,10 +144,11 @@ class DashboardRepository(
                     aggregate = true,
                 ),
             )
-            val series = post(
-                "/api/v2.0/reporting/netdata_get_data",
-                body,
+            val series = call(
+                "reporting.netdata_get_data",
                 Array<NetdataSeriesDto>::class.java,
+                body.graphs,
+                body.query,
             )
             extractCpuPageHistory(series.toList())
                 ?: throw DashboardApiException("No CPU history available yet.")
@@ -165,8 +166,7 @@ class DashboardRepository(
      */
     suspend fun getPoolDetail(poolId: Int): Result<PoolDetail> = withContext(Dispatchers.IO) {
         runCatching {
-            val dto = get("/api/v2.0/pool/id/$poolId", PoolDetailDto::class.java)
-            extractPoolDetail(dto)
+            extractPoolDetail(queryPool(poolId))
         }.toDashboardResult()
     }
 
@@ -194,12 +194,12 @@ class DashboardRepository(
      */
     suspend fun getPoolDiskDetails(poolId: Int, windowSeconds: Long): Result<List<PoolDiskInfo>> = withContext(Dispatchers.IO) {
         runCatching {
-            val poolDto = get("/api/v2.0/pool/id/$poolId", PoolDetailDto::class.java)
+            val poolDto = queryPool(poolId)
             val diskNames = extractDiskNames(poolDto.topology)
             if (diskNames.isEmpty()) return@runCatching emptyList()
 
-            val disksByName = get("/api/v2.0/disk", Array<DiskDto>::class.java).associateBy { it.name }
-            val reportingGraphs = get("/api/v2.0/reporting/graphs", Array<ReportingGraphDto>::class.java)
+            val disksByName = call("disk.query", Array<DiskDto>::class.java).associateBy { it.name }
+            val reportingGraphs = call("reporting.netdata_graphs", Array<ReportingGraphDto>::class.java)
             val diskGraphIdentifiers = reportingGraphs.firstOrNull { it.name == "disk" }?.identifiers.orEmpty()
             val identifiersByName = diskNames.associateWith { name ->
                 findDiskGraphIdentifier(name, diskGraphIdentifiers) ?: diskGraphIdentifier(name, disksByName[name])
@@ -213,7 +213,7 @@ class DashboardRepository(
                 },
                 query = QueryRequest(start = nowSeconds - windowSeconds, end = nowSeconds, aggregate = true),
             )
-            val series = post("/api/v2.0/reporting/netdata_get_data", body, Array<NetdataSeriesDto>::class.java).toList()
+            val series = call("reporting.netdata_get_data", Array<NetdataSeriesDto>::class.java, body.graphs, body.query).toList()
 
             diskNames.map { name ->
                 val diskDto = disksByName[name]
@@ -234,13 +234,13 @@ class DashboardRepository(
 
     /**
      * Current alerts, for the drawer's "Alertes" screen — curl-verified against a real server (see
-     * `ALERTS_TODO.md`): `GET /api/v2.0/alert/list` returns every alert (not just active ones, per
+     * `ALERTS_TODO.md`): `alert.list` returns every alert (not just active ones, per
      * the `dismissed` field), so dismissed ones are filtered out here rather than assuming the
      * server already does it.
      */
     suspend fun getAlerts(): Result<List<AlertInfo>> = withContext(Dispatchers.IO) {
         runCatching {
-            extractAlerts(get("/api/v2.0/alert/list", Array<AlertDto>::class.java).toList())
+            extractAlerts(call("alert.list", Array<AlertDto>::class.java).toList())
         }.toDashboardResult()
     }
 
@@ -253,17 +253,17 @@ class DashboardRepository(
      * same as [postRaw] here.
      */
     suspend fun dismissAlert(id: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching { postRaw("/api/v2.0/alert/dismiss", id) }.toDashboardResult()
+        runCatching { callDiscard("alert.dismiss", id) }.toDashboardResult()
     }
 
     /**
      * Installed apps, for the drawer's "Apps" screen — curl-verified against a real server (see
-     * `APPS_TODO.md`): `GET /api/v2.0/app`. No CPU/memory/network/block-IO here (see [AppInfo]'s
+     * `APPS_TODO.md`): `app.query`. No CPU/memory/network/block-IO here (see [AppInfo]'s
      * doc) — everything shown ([AppState], `upgrade_available`) comes straight from this call.
      */
     suspend fun getApps(): Result<List<AppInfo>> = withContext(Dispatchers.IO) {
         runCatching {
-            get("/api/v2.0/app", Array<AppDto>::class.java).map { dto ->
+            call("app.query", Array<AppDto>::class.java).map { dto ->
                 AppInfo(
                     id = dto.id,
                     title = dto.metadata?.title?.ifBlank { null } ?: dto.name,
@@ -280,13 +280,12 @@ class DashboardRepository(
     /**
      * Starts an upgrade job for one app, returning its middleware job id to poll via
      * [getJobStatus] — curl-verified against a real server (see `APPS_TODO.md`): `app.upgrade` is a
-     * middleware *job* (long-running), and `POST /api/v2.0/app/upgrade`'s body is
-     * `{"app_name": "<id>"}` (a plain kwargs-shaped object, unlike [dismissAlert]'s bare string) —
-     * the response is the bare job id, e.g. `105554`, not wrapped in an object.
+     * middleware *job* (long-running) taking `["<id>"]`, like [startApp] — the result is
+     * the bare job id, e.g. `105554` (see [callJob] for how it's resolved).
      */
     suspend fun upgradeApp(appId: String): Result<Long> = withContext(Dispatchers.IO) {
         runCatching {
-            post("/api/v2.0/app/upgrade", AppUpgradeRequest(appId), Long::class.java)
+            callJob("app.upgrade", appId)
         }.toDashboardResult()
     }
 
@@ -298,22 +297,22 @@ class DashboardRepository(
      * object like [upgradeApp] (two parameters).
      */
     suspend fun startApp(appId: String): Result<Long> = withContext(Dispatchers.IO) {
-        runCatching { post("/api/v2.0/app/start", appId, Long::class.java) }.toDashboardResult()
+        runCatching { callJob("app.start", appId) }.toDashboardResult()
     }
 
     /** Stops a running app — same shape and same caveat as [startApp] (`app.stop`, also a job). */
     suspend fun stopApp(appId: String): Result<Long> = withContext(Dispatchers.IO) {
-        runCatching { post("/api/v2.0/app/stop", appId, Long::class.java) }.toDashboardResult()
+        runCatching { callJob("app.stop", appId) }.toDashboardResult()
     }
 
     /**
      * Polls one middleware job's status — curl-verified against a real server (see
-     * `APPS_TODO.md`): `GET /api/v2.0/core/get_jobs?id=<id>` returns an array (filtered to that one
+     * `APPS_TODO.md`): `core.get_jobs` filtered on the job id returns an array (filtered to that one
      * job), not a single object.
      */
     suspend fun getJobStatus(jobId: Long): Result<JobStatus> = withContext(Dispatchers.IO) {
         runCatching {
-            val job = get("/api/v2.0/core/get_jobs?id=$jobId", Array<JobDto>::class.java).firstOrNull()
+            val job = call("core.get_jobs", Array<JobDto>::class.java, listOf(listOf("id", "=", jobId))).firstOrNull()
                 ?: throw DashboardApiException("Task not found.")
             JobStatus(
                 state = parseJobState(job.state),
@@ -325,14 +324,14 @@ class DashboardRepository(
 
     /**
      * "General settings" for the drawer's "System" screen — curl-verified against a real server
-     * (see `SYSTEM_TODO.md`): `GET /api/v2.0/system/general`. Only a handful of fields are declared
+     * (see `SYSTEM_TODO.md`): `system.general.config`. Only a handful of fields are declared
      * on [SystemGeneralDto] (timezone, keyboard layout, GUI ports/protocols) even though the real
      * response is much bigger — notably it embeds the web UI's TLS certificate *and private key* —
      * so nothing beyond what's actually shown ever gets deserialized.
      */
     suspend fun getSystemGeneral(): Result<SystemGeneralSettings> = withContext(Dispatchers.IO) {
         runCatching {
-            val dto = get("/api/v2.0/system/general", SystemGeneralDto::class.java)
+            val dto = call("system.general.config", SystemGeneralDto::class.java)
             SystemGeneralSettings(
                 timezone = dto.timezone,
                 keyboardLayout = dto.kbdmap,
@@ -346,16 +345,16 @@ class DashboardRepository(
 
     /**
      * Network configuration for the "System" screen's "Network" section — curl-verified against a
-     * real server (see `SYSTEM_TODO.md`): combines `GET /api/v2.0/network/configuration`
-     * (hostname/domain/gateways/nameservers) and `GET /api/v2.0/interface` (per-NIC link
+     * real server (see `SYSTEM_TODO.md`): combines `network.configuration.config`
+     * (hostname/domain/gateways/nameservers) and `interface.query` (per-NIC link
      * state/addresses), two separate calls since TrueNAS has no single endpoint for both. Per-NIC
      * IP addresses live under `state.aliases` (the live/kernel view), not the top-level `aliases`
      * (the statically configured ones, empty here since DHCP is used) — confirmed live.
      */
     suspend fun getNetworkInfo(): Result<NetworkInfo> = withContext(Dispatchers.IO) {
         runCatching {
-            val config = get("/api/v2.0/network/configuration", NetworkConfigurationDto::class.java)
-            val interfaces = get("/api/v2.0/interface", Array<InterfaceDto>::class.java)
+            val config = call("network.configuration.config", NetworkConfigurationDto::class.java)
+            val interfaces = call("interface.query", Array<InterfaceDto>::class.java)
             NetworkInfo(
                 hostname = config.hostname,
                 domain = config.domain,
@@ -378,16 +377,14 @@ class DashboardRepository(
 
     /**
      * Boot pool + boot environments for the "System" screen's "Boot" section — curl-verified
-     * against a real server (see `SYSTEM_TODO.md`): `GET /api/v2.0/boot/get_state` (same response
-     * shape as a regular `pool.query` entry) and `GET /api/v2.0/boot/environment/query`. Unlike
-     * `boot.environment`'s dotted name, the REST path is `/boot/environment/query` (a "query"
-     * CRUD-style method, confirmed via `GET /api/v2.0/openapi.json` after a plain
-     * `/boot/environment` 404'd).
+     * against a real server (see `SYSTEM_TODO.md`): `boot.get_state` (same response
+     * shape as a regular `pool.query` entry) and `boot.environment.query` (renamed from
+     * `boot.environment` on 25.10).
      */
     suspend fun getBootInfo(): Result<BootInfo> = withContext(Dispatchers.IO) {
         runCatching {
-            val pool = get("/api/v2.0/boot/get_state", BootPoolDto::class.java)
-            val environments = get("/api/v2.0/boot/environment/query", Array<BootEnvironmentDto>::class.java)
+            val pool = call("boot.get_state", BootPoolDto::class.java)
+            val environments = call("boot.environment.query", Array<BootEnvironmentDto>::class.java)
             BootInfo(
                 poolName = pool.name,
                 poolStatus = pool.status,
@@ -420,27 +417,25 @@ class DashboardRepository(
 
     /**
      * System services for the "System" screen's "Services" section — curl-verified against a real
-     * server (TrueNAS 25.10, see `SYSTEM_TODO.md`): `GET /api/v2.0/service` returns every service
+     * server (TrueNAS 25.10, see `SYSTEM_TODO.md`): `service.query` returns every service
      * in one call, with its run state and its "start automatically" flag.
      */
     suspend fun getServices(): Result<List<ServiceInfo>> = withContext(Dispatchers.IO) {
         runCatching {
-            get("/api/v2.0/service", Array<ServiceDto>::class.java).toServiceInfos()
+            call("service.query", Array<ServiceDto>::class.java).toServiceInfos()
         }.toDashboardResult()
     }
 
     /**
      * Starts or stops one service — curl-verified against a real server (see `SYSTEM_TODO.md`):
-     * `POST /api/v2.0/service/start` or `/service/stop` with `{"service": "<name>"}` answers a plain
+     * `service.start` or `service.stop` with `["<name>"]` answers a plain
      * `true`/`false` once the service has actually started/stopped (synchronous, no job to poll).
-     * TrueNAS waits up to 120s by default, hence [serviceControlClient] instead of the 15s default.
+     * TrueNAS waits up to 120s by default, hence [SERVICE_CONTROL_TIMEOUT_MILLIS] instead of the 15s default.
      */
     suspend fun setServiceRunning(name: String, running: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val path = if (running) "/api/v2.0/service/start" else "/api/v2.0/service/stop"
-            val requestBody = gson.toJson(ServiceControlRequest(name)).toRequestBody(JSON_MEDIA_TYPE)
-            val request = Request.Builder().url(baseUrlProvider() + path).post(requestBody).build()
-            val succeeded = execute(request, Boolean::class.java, serviceControlClient)
+            val method = if (running) "service.start" else "service.stop"
+            val succeeded = call(method, Boolean::class.java, name, timeoutMillis = SERVICE_CONTROL_TIMEOUT_MILLIS)
             if (!succeeded) {
                 throw DashboardApiException(if (running) "Couldn't be started." else "Couldn't be stopped.")
             }
@@ -449,52 +444,45 @@ class DashboardRepository(
 
     /**
      * Turns "start automatically" on/off for one service — curl-verified against a real server
-     * (see `SYSTEM_TODO.md`): `PUT /api/v2.0/service/id/{id}` with `{"enable": bool}`, answers the
+     * (see `SYSTEM_TODO.md`): `service.update` with `[id, {"enable": bool}]`, answers the
      * service id. Doesn't start/stop the service itself, see [setServiceRunning].
      */
     suspend fun setServiceStartOnBoot(id: Int, enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val requestBody = gson.toJson(ServiceUpdateRequest(enabled)).toRequestBody(JSON_MEDIA_TYPE)
-            val request = Request.Builder().url(baseUrlProvider() + "/api/v2.0/service/id/$id").put(requestBody).build()
-            execute(request, Int::class.java)
+            call("service.update", Int::class.java, id, ServiceUpdateRequest(enabled))
             Unit
         }.toDashboardResult()
     }
 
-    private fun <T> get(path: String, type: Class<T>): T {
-        val request = Request.Builder().url(baseUrlProvider() + path).get().build()
-        return execute(request, type)
+    /** Calls [method] with [params] as its positional args and deserializes the `result` as [type]. */
+    private suspend fun <T> call(
+        method: String,
+        type: Class<T>,
+        vararg params: Any?,
+        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    ): T = rpc.call(
+        method,
+        params.toList(),
+        { result ->
+            if (result.isJsonNull) throw DashboardApiException("Empty response from the server.")
+            gson.fromJson(result, type)
+        },
+        timeoutMillis,
+    )
+
+    /** Like [call], but for calls whose result is discarded (`null` on success) — see [dismissAlert]. */
+    private suspend fun callDiscard(method: String, vararg params: Any?) {
+        rpc.call(method, params.toList(), { }, DEFAULT_TIMEOUT_MILLIS)
     }
 
-    private fun <T> post(path: String, body: Any, type: Class<T>): T {
-        val requestBody = gson.toJson(body).toRequestBody(JSON_MEDIA_TYPE)
-        val request = Request.Builder().url(baseUrlProvider() + path).post(requestBody).build()
-        return execute(request, type)
-    }
+    /** A job-yielding call (`app.upgrade`/`start`/`stop`, one positional `app_name`): returns the job id. */
+    private suspend fun callJob(method: String, appId: String): Long =
+        rpc.call(method, listOf(appId), { it.asLong }, JOB_ACK_TIMEOUT_MILLIS, isJob = true)
 
-    /** Like [post], but for calls whose response body is discarded (`null` on success) — see [dismissAlert]. */
-    private fun postRaw(path: String, body: Any) {
-        val requestBody = gson.toJson(body).toRequestBody(JSON_MEDIA_TYPE)
-        val request = Request.Builder().url(baseUrlProvider() + path).post(requestBody).build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw DashboardApiException("The server responded with an error (${response.code}).")
-            }
-        }
-    }
-
-    private fun <T> execute(request: Request, type: Class<T>, client: OkHttpClient = okHttpClient): T {
-        client.newCall(request).execute().use { response ->
-            val bodyString = response.body?.string()
-            if (!response.isSuccessful) {
-                throw DashboardApiException("The server responded with an error (${response.code}).")
-            }
-            if (bodyString.isNullOrEmpty()) {
-                throw DashboardApiException("Empty response from the server.")
-            }
-            return gson.fromJson(bodyString, type)
-        }
-    }
+    /** `pool.query` filtered to one id — a one-element array (empty if there's no such pool). */
+    private suspend fun queryPool(poolId: Int): PoolDetailDto =
+        call("pool.query", Array<PoolDetailDto>::class.java, listOf(listOf("id", "=", poolId))).firstOrNull()
+            ?: throw DashboardApiException("Pool not found.")
 
     private fun <T> Result<T>.toDashboardResult(): Result<T> = recoverCatching { error ->
         throw when (error) {
@@ -504,16 +492,12 @@ class DashboardRepository(
         }
     }
 
-    /** Same client (auth, connection pool), longer read timeout for start/stop — see [setServiceRunning]. */
-    private val serviceControlClient: OkHttpClient by lazy {
-        okHttpClient.newBuilder().readTimeout(SERVICE_CONTROL_TIMEOUT_SECONDS, TimeUnit.SECONDS).build()
-    }
-
     private companion object {
         const val LIVE_WINDOW_SECONDS = 10L
+        const val DEFAULT_TIMEOUT_MILLIS = 15_000L
+        const val JOB_ACK_TIMEOUT_MILLIS = 15_000L
         // TrueNAS's own start/stop timeout is 120s; leave it room to answer before giving up.
-        const val SERVICE_CONTROL_TIMEOUT_SECONDS = 130L
-        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        const val SERVICE_CONTROL_TIMEOUT_MILLIS = 130_000L
     }
 }
 

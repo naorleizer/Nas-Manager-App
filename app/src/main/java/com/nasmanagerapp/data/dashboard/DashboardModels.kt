@@ -150,7 +150,7 @@ data class JobStatus(val state: JobState, val progressPercent: Int?, val error: 
 
 /**
  * "General settings" for the drawer's "System" screen, from `system.general`
- * (`GET /api/v2.0/system/general`) — only the fields actually shown are read; the response also
+ * (`system.general.config`) — only the fields actually shown are read; the response also
  * carries the web UI's TLS certificate/private key, deliberately never parsed into this app (see
  * [DashboardRepository.getSystemGeneral], `SYSTEM_TODO.md`).
  */
@@ -212,7 +212,7 @@ data class BootInfo(
 
 /**
  * One system service (SMB, NFS, SSH...), for the "Services" section of the drawer's "System"
- * screen, from `service.query` (`GET /api/v2.0/service`) — see [DashboardRepository.getServices].
+ * screen, from `service.query` — see [DashboardRepository.getServices].
  * [name] is the internal middleware name used by start/stop, [label] the name shown in the
  * TrueNAS web UI (`cifs` → "SMB", `nvmet` → "NVMe-oF"...).
  */

@@ -7,6 +7,7 @@ import com.nasmanagerapp.data.auth.TrueNasAuthRepository
 import com.nasmanagerapp.data.dashboard.DashboardRepository
 import com.nasmanagerapp.data.network.CredentialsStore
 import com.nasmanagerapp.data.network.NetworkModule
+import com.nasmanagerapp.data.network.TrueNasRpcClient
 import com.nasmanagerapp.data.network.TrueNasUrl
 import com.nasmanagerapp.data.theme.ThemePreferences
 import okhttp3.OkHttpClient
@@ -16,11 +17,17 @@ class TrueNasApplication : Application() {
     private val credentialsStore: CredentialsStore by lazy { CredentialsStore() }
 
     private val okHttpClient: OkHttpClient by lazy {
-        NetworkModule.createOkHttpClient(credentialsStore)
+        NetworkModule.createOkHttpClient()
+    }
+
+    private val rpcClient: TrueNasRpcClient by lazy {
+        TrueNasRpcClient(okHttpClient, credentialsStore) {
+            TrueNasUrl.deriveWebSocketUri(sessionPreferences.serverUrl)
+        }
     }
 
     /**
-     * Plain client (no Basic Auth interceptor) for external, unauthenticated resources — currently
+     * Separate client for external, unauthenticated resources — currently
      * just the app catalog's icon URLs (`https://media.sys.truenas.net/...`, see `APPS_TODO.md`),
      * which aren't served by the user's own TrueNAS and shouldn't receive its credentials.
      * Icons are only requested over HTTPS (`httpsIconUrl`), so redirects that switch scheme are
@@ -39,11 +46,11 @@ class TrueNasApplication : Application() {
     }
 
     val authRepository: TrueNasAuthRepository by lazy {
-        TrueNasAuthRepository(okHttpClient, credentialsStore)
+        TrueNasAuthRepository(rpcClient, credentialsStore)
     }
 
     val dashboardRepository: DashboardRepository by lazy {
-        DashboardRepository(okHttpClient) { TrueNasUrl.normalize(sessionPreferences.serverUrl) }
+        DashboardRepository(rpcClient)
     }
 
     /** The user currently authenticated against the API, if any — read from the single source of truth ([CredentialsStore]) rather than [sessionPreferences], which only holds a username when "Stay logged in" was checked. */

@@ -1,9 +1,9 @@
 package com.nasmanagerapp.data.network
 
 /**
- * Holds the credentials currently used to authenticate requests, if any. TrueNAS Scale's REST
- * API has no session/login endpoint — every request authenticates itself, here via HTTP Basic
- * Auth — so this is the single source of truth [AuthInterceptor] reads from.
+ * Holds the credentials of the current session, if any. [TrueNasRpcClient] re-authenticates with
+ * them (`auth.login_ex`) whenever it has to reopen its WebSocket, so it needs both. [password] is
+ * the account password, or an API key pasted in its place.
  */
 class CredentialsStore {
     @Volatile

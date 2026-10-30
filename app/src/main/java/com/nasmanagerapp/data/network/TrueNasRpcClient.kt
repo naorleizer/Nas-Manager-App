@@ -91,6 +91,7 @@ class TrueNasRpcClient(
         } catch (e: TrueNasAuthFailedException) {
             throw DashboardApiException(e.message ?: "Authentication failed.")
         } catch (e: IOException) {
+            android.util.Log.w(TAG, "call '$method' failed: ${e.javaClass.name}: ${e.message}")
             throw DashboardApiException("Couldn't reach the server.")
         }
         return parse(result)
@@ -115,12 +116,19 @@ class TrueNasRpcClient(
         } catch (e: IOException) {
             consecutiveFailures++
             val backoff = (BACKOFF_BASE_MILLIS shl (consecutiveFailures - 1).coerceAtMost(10)).coerceAtMost(BACKOFF_MAX_MILLIS)
+            android.util.Log.w(TAG, "open session failed: ${e.javaClass.name}: ${e.message} uri=$uri backoff=$backoff")
             retryNotBeforeMillis = System.currentTimeMillis() + backoff
             throw e
         }
     }
 
     private suspend fun openAuthenticated(uri: String, username: String, secret: String): Session {
+        val host = uri.toHttpUrlOrNull()?.host
+        val resolved = runCatching { java.net.InetAddress.getAllByName(host).joinToString { "${it.hostAddress}" } }
+        android.util.Log.w(
+            TAG,
+            "resolve host=$host -> ${resolved.getOrNull() ?: ("FAILED " + resolved.exceptionOrNull()?.javaClass?.simpleName + ": " + resolved.exceptionOrNull()?.message)}",
+        )
         val opened = CompletableDeferred<Unit>()
         val newSession = Session(gson, opened)
         val socket = okHttpClient.newWebSocket(Request.Builder().url(uri).build(), newSession)
@@ -283,6 +291,7 @@ class TrueNasRpcClient(
     }
 
     private companion object {
+        const val TAG = "NasManager"
         const val DEFAULT_TIMEOUT_MILLIS = 15_000L
         const val CONNECT_TIMEOUT_MILLIS = 15_000L
         const val BACKOFF_BASE_MILLIS = 1_000L

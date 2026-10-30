@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17 (targetSdk 37): direct local-network sockets (TCP/UDP to LAN
+         addresses) are gated behind this runtime permission by Local Network
+         Protections. Without it, OkHttp/WebSocket connections to the NAS time out. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <application
         android:name=".TrueNasApplication"

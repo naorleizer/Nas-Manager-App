@@ -1,11 +1,16 @@
 package com.nasmanagerapp
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -22,11 +27,39 @@ import com.nasmanagerapp.ui.theme.NasManagerAppTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    // Android 17 (targetSdk 37) Local Network Protections: direct sockets to
+    // LAN addresses are dropped by the network stack (TCP timeout) unless this
+    // runtime permission is granted. See
+    // developer.android.com/privacy-and-security/local-network-permission.
+    private val localNetPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(
+                    this,
+                    "Local network access is required to reach the NAS. Enable it in Settings → Apps → permissions.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        maybeRequestLocalNetworkAccess()
         setContent {
             TrueNasApp()
+        }
+    }
+
+    private fun maybeRequestLocalNetworkAccess() {
+        // Enforcement applies to Android 16+ builds with LNP; on older platforms
+        // the permission doesn't exist and must not be requested.
+        if (Build.VERSION.SDK_INT < 36) return
+        val granted = checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            localNetPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
         }
     }
 }

@@ -124,7 +124,7 @@ class TrueNasRpcClient(
     }
 
     private suspend fun openAuthenticated(uri: String, username: String, secret: String): Session {
-        val host = uri.toHttpUrlOrNull()?.host
+        val host = runCatching { java.net.URI(uri).host }.getOrNull()
         val resolved = runCatching { java.net.InetAddress.getAllByName(host).joinToString { "${it.hostAddress}" } }
         android.util.Log.w(
             TAG,
@@ -132,7 +132,10 @@ class TrueNasRpcClient(
         )
         val opened = CompletableDeferred<Unit>()
         val newSession = Session(gson, opened)
-        val socket = okHttpClient.newWebSocket(Request.Builder().url(uri).build(), newSession)
+        android.util.Log.w(TAG, "openAuth: connecting uri=$uri")
+        val socket = runCatching { okHttpClient.newWebSocket(Request.Builder().url(uri).build(), newSession) }
+            .onFailure { android.util.Log.w(TAG, "newWebSocket THREW synchronously: ${it.javaClass.name}: ${it.message}") }
+            .getOrThrow()
         newSession.socket = socket
         try {
             try {
@@ -149,12 +152,15 @@ class TrueNasRpcClient(
                 }
             }
         } catch (e: TimeoutCancellationException) {
+            android.util.Log.w(TAG, "openAuth: connect/auth timeout after ${CONNECT_TIMEOUT_MILLIS}ms uri=$uri")
             newSession.close()
             throw IOException("The server didn't respond in time.")
         } catch (e: RpcErrorException) {
+            android.util.Log.w(TAG, "openAuth: RPC error ${e.code}: ${e.message}")
             newSession.close()
             throw DashboardApiException(e.message ?: "Unknown error.")
         } catch (e: Throwable) {
+            android.util.Log.w(TAG, "openAuth: ${e.javaClass.name}: ${e.message}")
             newSession.close()
             throw e
         }
@@ -236,6 +242,7 @@ class TrueNasRpcClient(
         }
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            android.util.Log.w(TAG, "WS onOpen code=${response.code} ${response.message}")
             opened.complete(Unit)
         }
 
@@ -278,15 +285,18 @@ class TrueNasRpcClient(
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            android.util.Log.w(TAG, "WS onClosing code=$code reason=$reason")
             fail(IOException("Connection closed."))
             webSocket.close(code, null)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            android.util.Log.w(TAG, "WS onClosed code=$code reason=$reason")
             fail(IOException("Connection closed."))
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            android.util.Log.w(TAG, "WS onFailure: ${t.javaClass.name}: ${t.message} response=${response?.code ?: "-"}")
             fail(t)
         }
     }

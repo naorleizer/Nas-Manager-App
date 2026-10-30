@@ -56,10 +56,13 @@ class TrueNasAuthRepository(
                 credentialsStore.password = password
                 Result.success(Unit)
             } catch (e: TrueNasAuthFailedException) {
+                android.util.Log.w("NasManager", "login: auth failed: ${e.message}")
                 Result.failure(TrueNasApiException(e.message ?: "Invalid username or password."))
             } catch (e: DashboardApiException) {
+                android.util.Log.w("NasManager", "login: api exception: ${e.javaClass.simpleName}: ${e.message}")
                 Result.failure(TrueNasApiException(e.message ?: "The server responded with an error."))
             } catch (e: SSLHandshakeException) {
+                android.util.Log.w("NasManager", "login: SSLHandshake: ${e.message}")
                 Result.failure(
                     TrueNasApiException(
                         "Server certificate not trusted (wss). If your TrueNAS uses a self-signed " +
@@ -67,6 +70,7 @@ class TrueNasAuthRepository(
                     )
                 )
             } catch (e: IOException) {
+                android.util.Log.w("NasManager", "login: io: ${e.javaClass.name}: ${e.message}")
                 Result.failure(TrueNasApiException("Couldn't reach the server. Check the address and your network."))
             }
         }

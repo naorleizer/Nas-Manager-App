@@ -46,7 +46,7 @@ graph TB
 
 ## Authentication
 
-The app authenticates the WebSocket with **`auth.login_ex`** (`PASSWORD_PLAIN`: TrueNAS username + password), once per connection. If that fails and the password field holds something shaped like an API key (`<number>-<16+ chars>`), it retries once with `API_KEY_PLAIN` — so you can paste an API key in the password field. Accounts that require two-factor authentication, lack API access, have expired credentials, or must authenticate on the other controller get a specific message.
+The app authenticates the WebSocket with **`auth.login_ex`** (`PASSWORD_PLAIN`: TrueNAS username + password), once per connection. If the password field holds something shaped like an API key (`<number>-<16+ chars>`), it is sent as `API_KEY_PLAIN` first (never over unencrypted `ws://`), falling back to `PASSWORD_PLAIN` — so you can paste an API key in the password field. Accounts that require two-factor authentication, lack API access, have expired credentials, or must authenticate on the other controller get a specific message.
 
 The WebSocket URL is derived from the typed address: `https://` → `wss://`, `http://` → `ws://`, the port is the one you typed (443/80 by default), path `/api/current`.
 

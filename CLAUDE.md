@@ -14,8 +14,10 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   scheme-switching redirects refused) — see `APPS_TODO.md`. Icons are PNG/JPEG (`BitmapFactory`)
   or SVG (AndroidSVG, internal XML entities disabled app-wide in `TrueNasApplication.onCreate`),
   with a bounded download and decode size (`AppsScreen.kt`).
-- **Auth**: `auth.login_ex` on the WebSocket (`PASSWORD_PLAIN`, then one `API_KEY_PLAIN` retry if
-  the secret looks like an API key), followed by `core.set_options {legacy_jobs:false}`.
+- **Auth**: `auth.login_ex` on the WebSocket (`API_KEY_PLAIN` first when the secret looks like an API key —
+  refused outright over `ws://`, then a `PASSWORD_PLAIN` fallback —, else `PASSWORD_PLAIN`), followed
+  by `core.set_options {legacy_jobs:false}`. If a reconnect's re-auth is refused, the client backs off,
+  clears the credentials and raises `authRejected`, which signs the dashboard out.
   `CredentialsStore` keeps username + secret in memory (needed to re-auth on reconnect);
   `TrueNasAuthRepository.login()` opens the session and stores them only once accepted.
   `SessionPreferences` (AES-GCM, key in the Android Keystore — no crypto library, see

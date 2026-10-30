@@ -1,0 +1,1 @@
+L'app communique désormais avec TrueNAS via son API JSON-RPC WebSocket (/api/current) au lieu de REST. Une reconnexion sera nécessaire après cette mise à jour

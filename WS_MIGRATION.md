@@ -1,15 +1,16 @@
 # REST → WebSocket JSON-RPC migration
 
-As of v1.3.0 the app speaks JSON-RPC 2.0 over the TrueNAS `/api/current` WebSocket instead of REST
-`/api/v2.0` + Basic Auth. Wire contract probed live against **TrueNAS 25.10.x on 2026-10-30**.
+The app speaks JSON-RPC 2.0 over the TrueNAS `/api/current` WebSocket (the table below maps the
+former REST `/api/v2.0` routes). Wire contract probed live against **TrueNAS 25.10.x on 2026-10-30**.
 
 - Request: `{"jsonrpc":"2.0","id":"<uuid>","method":"<m>","params":[...]}` — `params` must be an array.
-- Auth: `auth.login_ex` on the same socket (`PASSWORD_PLAIN`, then one `API_KEY_PLAIN` retry if the
-  secret looks like an API key), then `core.set_options [{"legacy_jobs":false}]` (ignored on -32601).
+- Auth: `auth.login_ex` on the same socket (`API_KEY_PLAIN` first if the secret looks like an
+  API key — never over `ws://` — with a `PASSWORD_PLAIN` fallback; otherwise `PASSWORD_PLAIN`), then `core.set_options [{"legacy_jobs":false}]` (ignored on -32601).
 - Query filters are positional arg 0 and three levels deep: `[[["id","=",3]]]`.
 - Job-yielding calls (`app.upgrade`/`start`/`stop`) resolve from the direct numeric result or from a
   `collection_update` on `core.get_jobs` whose `fields.message_ids` contains the call id; 15 s cap.
-- Notifications (no `id`) are otherwise ignored. Keepalive: OkHttp `pingInterval(20s)`.
+- Notifications (no `id`) are otherwise ignored; an `error` frame with `"id": null` fails every
+  pending call. Keepalive: OkHttp `pingInterval(20s)`.
 
 | Old REST | New call (params on the wire) |
 |---|---|

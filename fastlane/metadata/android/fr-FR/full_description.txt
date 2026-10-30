@@ -1,4 +1,4 @@
-NasManager est un client compagnon non officiel pour les serveurs TrueNAS® SCALE. Il communique directement avec l'API REST de votre serveur (/api/v2.0) : aucun compte à créer, aucun serveur intermédiaire, pas de pistage, pas de publicité.
+NasManager est un client compagnon non officiel pour les serveurs TrueNAS® SCALE. Il communique directement avec l'API JSON-RPC WebSocket de votre serveur (/api/current) : aucun compte à créer, aucun serveur intermédiaire, pas de pistage, pas de publicité.
 
 <b>Tableau de bord</b>
 <ul>
@@ -23,7 +23,7 @@ NasManager est un client compagnon non officiel pour les serveurs TrueNAS® SCAL
 
 <b>Sécurité et vie privée — à lire</b>
 <ul>
-<li><b>Authentification</b> : TrueNAS SCALE n'expose pas de route de connexion REST, l'app utilise donc l'authentification HTTP Basic : votre identifiant et votre mot de passe sont envoyés à chaque requête vers votre serveur. Utilisez un compte TrueNAS dédié à l'app, aux droits réduits, plutôt que votre compte administrateur principal.</li>
+<li><b>Authentification</b> : l'app se connecte une fois par connexion (auth.login_ex) avec votre identifiant et votre mot de passe, ou une clé d'API collée dans le champ mot de passe (HTTPS uniquement). Utilisez un compte TrueNAS dédié à l'app, aux droits réduits, plutôt que votre compte administrateur principal.</li>
 <li><b>HTTP non chiffré</b> : HTTPS est recommandé. Le HTTP en clair (adresse IP ou nom d'hôte) est possible, mais uniquement après avoir coché explicitement une case acceptant le risque : vos identifiants circulent alors en clair sur le réseau.</li>
 <li><b>Stockage des identifiants</b> : par défaut, les identifiants ne sont conservés qu'en mémoire. Si vous cochez « Stay logged in » (Rester connecté), ils sont enregistrés sur l'appareil, chiffrés avec une clé conservée dans l'Android Keystore (EncryptedSharedPreferences). Cette option est indisponible pour une adresse HTTP : un mot de passe enregistré n'est donc jamais renvoyé automatiquement en clair.</li>
 <li><b>Connexions réseau</b> : l'app ne se connecte qu'à l'adresse de serveur que vous saisissez, ainsi que, sur l'écran Apps, au CDN public d'icônes TrueNAS (media.sys.truenas.net) pour afficher les icônes des applications. Vos identifiants ne sont jamais envoyés à ce CDN.</li>
@@ -32,7 +32,7 @@ NasManager est un client compagnon non officiel pour les serveurs TrueNAS® SCAL
 <b>Prérequis et limites</b>
 <ul>
 <li>Un serveur TrueNAS SCALE joignable depuis votre téléphone. Avec un certificat auto-signé (le défaut de TrueNAS), installez-le dans les paramètres de sécurité d'Android pour que HTTPS fonctionne.</li>
-<li>Pas de consommation CPU / mémoire / réseau par app : TrueNAS n'expose ces métriques qu'en WebSocket, pas en REST.</li>
+<li>Pas de consommation CPU / mémoire / réseau par app : TrueNAS n'expose ces métriques que sous forme d'événements d'abonnement, que l'app n'utilise pas.</li>
 <li>« Discover Apps » (parcourir le catalogue et installer) n'est pas encore disponible.</li>
 <li>Interface en anglais.</li>
 </ul>

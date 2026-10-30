@@ -79,6 +79,8 @@ data class DashboardUiState(
     val servicesError: String? = null,
     val isSavingServices: Boolean = false,
     val serviceSaveErrors: List<String> = emptyList(),
+    /** The stored credentials were refused on a reconnect: the UI should return to the sign-in screen. */
+    val signedOut: Boolean = false,
 )
 
 /**
@@ -97,6 +99,9 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
         loadSystemInfo()
         loadAlerts()
         startPolling()
+        viewModelScope.launch {
+            repository.authRejected.collect { rejected -> _uiState.update { it.copy(signedOut = rejected) } }
+        }
     }
 
     fun retryLoadSystemInfo() {

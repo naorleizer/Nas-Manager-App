@@ -50,6 +50,10 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        // android.util.Log calls in the RPC client must not throw in JVM unit tests.
+        unitTests.isReturnDefaultValues = true
+    }
     // AGP otherwise embeds a dependency metadata block encrypted with a Google key, which F-Droid
     // rejects as an opaque blob.
     dependenciesInfo {

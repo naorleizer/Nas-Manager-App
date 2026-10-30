@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,6 +94,11 @@ fun DashboardRoute(
     val scope = rememberCoroutineScope()
 
     fun closeDrawer() = scope.launch { drawerState.close() }
+
+    // The server refused the stored credentials on a reconnect: sign out instead of retrying silently.
+    LaunchedEffect(uiState.signedOut) {
+        if (uiState.signedOut) onLogout()
+    }
 
     // Mirrors the onBack callback of whichever nested screen is currently shown, so the system
     // back gesture/button steps back through the drawer navigation instead of closing the app.

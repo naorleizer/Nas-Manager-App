@@ -8,6 +8,7 @@ import java.io.IOException
 import java.time.OffsetDateTime
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 
 class DashboardApiException(message: String) : Exception(message)
@@ -33,6 +34,9 @@ class DashboardRepository(
     private val rpc: TrueNasRpcClient,
 ) {
     private val gson = Gson()
+
+    /** True once the stored credentials were refused on a reconnect (see [TrueNasRpcClient.authRejected]). */
+    val authRejected: StateFlow<Boolean> get() = rpc.authRejected
 
     suspend fun getSystemInfo(): Result<SystemInfo> = withContext(Dispatchers.IO) {
         runCatching {
@@ -477,7 +481,7 @@ class DashboardRepository(
 
     /** A job-yielding call (`app.upgrade`/`start`/`stop`, one positional `app_name`): returns the job id. */
     private suspend fun callJob(method: String, appId: String): Long =
-        rpc.call(method, listOf(appId), { it.asLong }, JOB_ACK_TIMEOUT_MILLIS, isJob = true)
+        rpc.call(method, listOf(appId), { it.asLong }, DEFAULT_TIMEOUT_MILLIS, isJob = true)
 
     /** `pool.query` filtered to one id — a one-element array (empty if there's no such pool). */
     private suspend fun queryPool(poolId: Int): PoolDetailDto =
@@ -495,7 +499,6 @@ class DashboardRepository(
     private companion object {
         const val LIVE_WINDOW_SECONDS = 10L
         const val DEFAULT_TIMEOUT_MILLIS = 15_000L
-        const val JOB_ACK_TIMEOUT_MILLIS = 15_000L
         // TrueNAS's own start/stop timeout is 120s; leave it room to answer before giving up.
         const val SERVICE_CONTROL_TIMEOUT_MILLIS = 130_000L
     }

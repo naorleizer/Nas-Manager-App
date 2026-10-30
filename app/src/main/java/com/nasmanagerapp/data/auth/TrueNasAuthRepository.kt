@@ -1,5 +1,6 @@
 package com.nasmanagerapp.data.auth
 
+import android.util.Log
 import com.nasmanagerapp.data.dashboard.DashboardApiException
 import com.nasmanagerapp.data.network.CredentialsStore
 import com.nasmanagerapp.data.network.TrueNasAuthFailedException
@@ -10,6 +11,8 @@ import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+private const val TAG = "NasManager"
 
 class TrueNasApiException(message: String) : Exception(message)
 
@@ -56,13 +59,12 @@ class TrueNasAuthRepository(
                 credentialsStore.password = password
                 Result.success(Unit)
             } catch (e: TrueNasAuthFailedException) {
-                android.util.Log.w("NasManager", "login: auth failed: ${e.message}")
                 Result.failure(TrueNasApiException(e.message ?: "Invalid username or password."))
             } catch (e: DashboardApiException) {
-                android.util.Log.w("NasManager", "login: api exception: ${e.javaClass.simpleName}: ${e.message}")
                 Result.failure(TrueNasApiException(e.message ?: "The server responded with an error."))
             } catch (e: SSLHandshakeException) {
-                android.util.Log.w("NasManager", "login: SSLHandshake: ${e.message}")
+                // The user-facing message hides the cause; cert failures are the usual field report.
+                Log.d(TAG, "login: SSLHandshake: ${e.message}")
                 Result.failure(
                     TrueNasApiException(
                         "Server certificate not trusted (wss). If your TrueNAS uses a self-signed " +
@@ -70,7 +72,6 @@ class TrueNasAuthRepository(
                     )
                 )
             } catch (e: IOException) {
-                android.util.Log.w("NasManager", "login: io: ${e.javaClass.name}: ${e.message}")
                 Result.failure(TrueNasApiException("Couldn't reach the server. Check the address and your network."))
             }
         }
@@ -80,7 +81,7 @@ class TrueNasAuthRepository(
      * there's no way to invalidate this password server-side from here — "logging out" is purely
      * local.
      */
-    fun logout() {
+    suspend fun logout() {
         rpcClient.close()
         credentialsStore.username = null
         credentialsStore.password = null

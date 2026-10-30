@@ -11,6 +11,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -128,7 +129,7 @@ class TrueNasRpcClientTest {
             reply(ws, frame, """"pong"""")
         }
 
-        val result = runBlocking { client.call("core.ping", emptyList(), { it.asString }) }
+        val result = runBlocking { client.call("system.info", emptyList(), { it.asString }) }
 
         assertEquals("pong", result)
     }
@@ -186,17 +187,57 @@ class TrueNasRpcClientTest {
     }
 
     @Test
-    fun `API-key-shaped secret is retried with API_KEY_PLAIN after a password failure`() {
+    fun `API-key-shaped secret is never sent over a cleartext connection`() {
+        // MockWebServer is plain http/ws, i.e. cleartext.
         val apiKey = "1-" + "A".repeat(16)
-        authResponseType = { payload -> if (payload.get("mechanism").asString == "API_KEY_PLAIN") "SUCCESS" else "AUTH_ERR" }
 
-        newClient().loginAsAdmin(apiKey)
-
-        val mechanisms = received.take(2).map {
-            it.getAsJsonArray("params")[0].asJsonObject.get("mechanism").asString
+        try {
+            newClient().loginAsAdmin(apiKey)
+            fail("expected TrueNasAuthFailedException")
+        } catch (e: TrueNasAuthFailedException) {
+            assertTrue(e.message!!.contains("unencrypted"))
         }
-        assertEquals(listOf("PASSWORD_PLAIN", "API_KEY_PLAIN"), mechanisms)
-        assertEquals(apiKey, received[1].getAsJsonArray("params")[0].asJsonObject.get("api_key").asString)
+        assertEquals(0, received.count { it.get("method").asString == "auth.login_ex" })
+    }
+
+    @Test
+    fun `call timeout while connecting reports the call timing out, not unreachable`() {
+        val silent = MockWebServer()
+        silent.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        silent.start()
+        try {
+            val credentials = CredentialsStore().apply { username = "admin"; password = "hunter2" }
+            val client = TrueNasRpcClient(OkHttpClient(), credentials) { silent.url("/api/current").toString() }
+
+            try {
+                runBlocking { client.call("system.info", emptyList(), { it }, timeoutMillis = 300) }
+                fail("expected DashboardApiException")
+            } catch (e: DashboardApiException) {
+                assertEquals("The server didn't respond in time.", e.message)
+            }
+        } finally {
+            try {
+                silent.shutdown()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    @Test
+    fun `error frame with a null id fails pending calls fast`() {
+        val client = newClient().also { it.loginAsAdmin() }
+        onRequest = { _, ws ->
+            ws.send("""{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}""")
+        }
+
+        val startedAt = System.nanoTime()
+        try {
+            runBlocking { client.call("system.info", emptyList(), { it }, timeoutMillis = 10_000) }
+            fail("expected DashboardApiException")
+        } catch (e: DashboardApiException) {
+            assertEquals("Parse error", e.message)
+        }
+        assertTrue((System.nanoTime() - startedAt) < 5_000_000_000L)
     }
 
     @Test

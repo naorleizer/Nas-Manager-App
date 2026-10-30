@@ -6,10 +6,12 @@ import okhttp3.OkHttpClient
 /** Builds the [OkHttpClient] backing the JSON-RPC WebSocket to the configured TrueNAS server. */
 object NetworkModule {
 
+    const val TIMEOUT_SECONDS = 15L
+
     fun createOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
         // WebSocket keepalive: a missed pong fails the socket so the next call reconnects.
         .pingInterval(20, TimeUnit.SECONDS)
         .build()

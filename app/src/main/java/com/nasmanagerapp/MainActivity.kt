@@ -1,11 +1,16 @@
 package com.nasmanagerapp
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -22,11 +27,29 @@ import com.nasmanagerapp.ui.theme.NasManagerAppTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    // Local Network Protections: LAN sockets time out unless ACCESS_LOCAL_NETWORK is granted.
+    private val localNetPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(this, R.string.local_network_denied, Toast.LENGTH_LONG).show()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        maybeRequestLocalNetworkAccess()
         setContent {
             TrueNasApp()
+        }
+    }
+
+    private fun maybeRequestLocalNetworkAccess() {
+        // The permission doesn't exist before API 37; enforcement targets Android 17.
+        if (Build.VERSION.SDK_INT < 37) return
+        if (checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED) {
+            localNetPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
         }
     }
 }

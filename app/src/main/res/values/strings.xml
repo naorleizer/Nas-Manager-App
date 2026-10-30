@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">NasManager mobile</string>
+    <string name="local_network_denied">Local network access is needed to reach the NAS. Grant it in the app\'s permission settings.</string>
 </resources>
